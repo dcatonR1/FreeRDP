@@ -5,6 +5,7 @@
  * Copyright 2009-2011 Jay Sorg
  * Copyright 2010-2011 Vic Lee
  * Copyright 2010-2011 Marc-Andre Moreau <marcandre.moreau@gmail.com>
+ * Copyright 2016 Don Caton <dcaton1220@gmail.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -216,6 +217,8 @@ BOOL wf_pre_connect(freerdp* instance)
 	int desktopHeight;
 	rdpContext* context;
 	rdpSettings* settings;
+    UINT32 maxWidth = 0;
+    UINT32 maxHeight = 0;
 
 	context = instance->context;
 	wfc = (wfContext*) instance->context;
@@ -264,7 +267,7 @@ BOOL wf_pre_connect(freerdp* instance)
 
 	if (!(instance->context->cache = cache_new(settings)))
 		return FALSE;
-
+//#if 0
 	desktopWidth = settings->DesktopWidth;
 	desktopHeight = settings->DesktopHeight;
 
@@ -299,7 +302,6 @@ BOOL wf_pre_connect(freerdp* instance)
 	{
 		freerdp_set_param_uint32(settings, FreeRDP_DesktopWidth, desktopWidth);
 	}
-
 	if (desktopHeight != settings->DesktopHeight)
 	{
 		freerdp_set_param_uint32(settings, FreeRDP_DesktopHeight, desktopHeight);
@@ -312,6 +314,11 @@ BOOL wf_pre_connect(freerdp* instance)
 		return FALSE;
 	}
 
+//#endif
+
+    // Default to 32 bit depth unless otherwise specified on command line.
+    freerdp_set_param_uint32(settings, FreeRDP_ColorDepth, 32 );
+
 	freerdp_set_param_uint32(settings, FreeRDP_KeyboardLayout, (int) GetKeyboardLayout(0) & 0x0000FFFF);
 
 	PubSub_SubscribeChannelConnected(instance->context->pubSub,
@@ -322,6 +329,14 @@ BOOL wf_pre_connect(freerdp* instance)
 
 	if (freerdp_channels_pre_connect(instance->context->channels, instance) != CHANNEL_RC_OK)
 		return FALSE;
+
+    wf_detect_monitors( wfc, &maxWidth, &maxHeight );
+
+    if (maxWidth && maxHeight)
+    {
+        settings->DesktopWidth = maxWidth;
+        settings->DesktopHeight = maxHeight;
+    }
 
 	return TRUE;
 }
@@ -1068,6 +1083,10 @@ BOOL wfreerdp_client_new(freerdp* instance, rdpContext* context)
 	instance->GatewayAuthenticate = wf_gw_authenticate;
 	instance->VerifyCertificate = wf_verify_certificate;
 	instance->VerifyChangedCertificate = wf_verify_changed_certificate;
+
+    // wfc->display = XOpenDisplay(NULL);
+    // xfc->screen_number = DefaultScreen( xfc->display );  returns default screen number, should this be the default monitor on Windows?
+    // xfc->screen = ScreenOfDisplay( xfc->display, xfc->screen_number );  gets 'Screen' pointer for default display
 
 	wfc->instance = instance;
 	wfc->settings = instance->settings;

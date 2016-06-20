@@ -6,6 +6,7 @@
  * Copyright 2010-2011 Vic Lee
  * Copyright 2010-2011 Marc-Andre Moreau <marcandre.moreau@gmail.com>
  *
+ * Copyright 2016 Don Caton <dcaton1220@gmail.com>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -46,6 +47,7 @@ typedef struct wf_context wfContext;
 #include "wf_floatbar.h"
 #include "wf_event.h"
 #include "wf_cliprdr.h"
+#include "wf_monitor.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -70,6 +72,24 @@ struct wf_pointer
 	HCURSOR cursor;
 };
 typedef struct wf_pointer wfPointer;
+
+struct wf_FullscreenMonitors
+{
+    UINT32 top;
+    UINT32 bottom;
+    UINT32 left;
+    UINT32 right;
+};
+typedef struct wf_FullscreenMonitors wfFullscreenMonitors;
+
+struct wf_WorkArea
+{
+    UINT32 x;
+    UINT32 y;
+    UINT32 width;
+    UINT32 height;
+};
+typedef struct wf_WorkArea wfWorkArea;
 
 struct wf_context
 {
@@ -144,6 +164,18 @@ struct wf_context
 
 	RailClientContext* rail;
 	wHashTable* railWindows;
+
+    // Additions to support multimon
+
+    // TODO: what does the Linux version do with these???
+    VIRTUAL_SCREEN vscreen;
+
+    // TODO: check other places where this is used in Linux source
+    //Screen* screen;  // search for sfc->screen in Linux client
+
+    // Not clear what theses are used for, even in the Linux version
+    wfWorkArea workArea;
+    wfFullscreenMonitors fullscreenMonitors;
 };
 
 /**
