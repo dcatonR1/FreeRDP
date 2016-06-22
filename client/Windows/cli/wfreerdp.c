@@ -5,6 +5,7 @@
  * Copyright 2009-2011 Jay Sorg
  * Copyright 2010-2011 Vic Lee
  * Copyright 2010-2011 Marc-Andre Moreau <marcandre.moreau@gmail.com>
+ * Copyright 2016 Don Caton <dcaton1220@gmail.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -96,9 +97,14 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 		goto out;
 
 	status = freerdp_client_settings_parse_command_line(settings, argc, argv, FALSE);
+
+    status = freerdp_client_settings_command_line_status_print( settings, status, argc, argv );
+
 	if (status)
     {
-        freerdp_client_settings_command_line_status_print(settings, status, argc, argv);
+        if (settings->ListMonitors)
+            wf_list_monitors(wfc);
+        
 		goto out;
     }
 
