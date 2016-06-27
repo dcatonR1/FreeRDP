@@ -24,6 +24,8 @@
 #include "config.h"
 #endif
 
+#define R1_CUSTOMIZATIONS
+
 #include <winpr/windows.h>
 
 #include <winpr/crt.h>
@@ -96,6 +98,18 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	if (!settings || !wfc)
 		goto out;
 
+#ifdef R1_CUSTOMIZATIONS
+    wfc->resumeSessionEvent = OpenEvent( EVENT_ALL_ACCESS, false, L"MobiResumeSession" );
+    if (wfc->resumeSessionEvent == NULL)
+        goto out;
+
+    wfc->cancelSessionEvent = OpenEvent( EVENT_ALL_ACCESS, false, L"MobiCancelSession" );
+    if (wfc->cancelSessionEvent == NULL)
+        goto out;
+
+#endif
+
+
 	status = freerdp_client_settings_parse_command_line(settings, argc, argv, FALSE);
 
     status = freerdp_client_settings_command_line_status_print( settings, status, argc, argv );
@@ -114,17 +128,39 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	thread = freerdp_client_get_thread(context);
 	if (thread)
 	{
-		if (WaitForSingleObject(thread, INFINITE) == WAIT_OBJECT_0)
+#ifdef R1_CUSTOMIZATIONS
+        HANDLE objs[] = { thread, wfc->cancelSessionEvent };
+        if (WaitForMultipleObjects( 2, objs, false, INFINITE ) == WAIT_OBJECT_0)
+        {
+            GetExitCodeThread( thread, &dwExitCode );
+            ret = dwExitCode;
+        }
+        else
+        {
+            ret = dwExitCode = 255;
+        }
+#else
+        if (WaitForSingleObject(thread, INFINITE) == WAIT_OBJECT_0)
 		{
 			GetExitCodeThread(thread, &dwExitCode);
 			ret = dwExitCode;
 		}
+#endif
 	}
 
 	if (freerdp_client_stop(context) != 0)
 		goto out;
 
 out:
+
+#ifdef R1_CUSTOMIZATIONS
+    if (wfc->resumeSessionEvent)
+        CloseHandle( wfc->resumeSessionEvent );
+
+    if (wfc->cancelSessionEvent)
+        CloseHandle( wfc->cancelSessionEvent );
+#endif
+
 	freerdp_client_context_free(context);
 
 	if (argv)

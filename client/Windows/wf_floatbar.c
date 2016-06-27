@@ -30,9 +30,13 @@
 typedef struct _Button Button;
 
 /* TIMERs */
-#define TIMER_HIDE          1
-#define TIMER_ANIMAT_SHOW   2
-#define TIMER_ANIMAT_HIDE   3
+#define TIMER_HIDE           1
+#define TIMER_ANIMAT_SHOW    2
+#define TIMER_ANIMAT_HIDE    3
+
+#ifdef R1_CUSTOMIZATIONS
+#define TIMER_RESUME_SESSION 4
+#endif
 
 /* Button Type */
 #define BUTTON_LOCKPIN      0
@@ -113,7 +117,14 @@ static int button_hit(Button * const  button)
 			break;
 
 		case BUTTON_RESTORE:
+#ifdef R1_CUSTOMIZATIONS
+            // TODO: send signal to remote core and hide window
+            ShowWindow( floatbar->parent, SW_HIDE );
+            ResetEvent( button->floatbar->wfc->resumeSessionEvent );
+            SetTimer( floatbar->hwnd, TIMER_RESUME_SESSION, 1000, NULL );
+#else
 			wf_toggle_fullscreen(floatbar->wfc);
+#endif
 			break;
 
 		case BUTTON_CLOSE:
@@ -470,6 +481,15 @@ LRESULT CALLBACK floatbar_proc(const HWND hWnd, const UINT Msg, const WPARAM wPa
 					}
 					break;
 				}
+                case TIMER_RESUME_SESSION:
+                {
+                    if (WaitForSingleObject( wfc->resumeSessionEvent, 0 ) == WAIT_OBJECT_0)
+                    {
+                        ResetEvent( wfc->resumeSessionEvent );
+                        ShowWindow( floatbar->parent, SW_SHOW );
+                        KillTimer( hWnd, wParam );
+                    }
+                }
 				default:
 					break;
 			}
@@ -502,6 +522,10 @@ static FloatBar* floatbar_create(wfContext* const wfc)
 	floatbar->wfc = wfc;
 	floatbar->hdcmem = NULL;
 
+#ifdef R1_CUSTOMIZATIONS
+    floatbar->buttons[0] = NULL;
+    floatbar->buttons[1] = floatbar_create_button( floatbar, BUTTON_RESTORE, IDB_R1_RETURN, IDB_R1_RETURN_ACT, RESTORE_X, BUTTON_Y, BUTTON_HEIGHT, BUTTON_WIDTH );
+#else
     if (wfc->fullscreen_toggle)
     {
         floatbar->buttons[0] = floatbar_create_button( floatbar, BUTTON_MINIMIZE, IDB_MINIMIZE, IDB_MINIMIZE_ACT, MINIMIZE_X, BUTTON_Y, BUTTON_HEIGHT, BUTTON_WIDTH );
@@ -513,7 +537,8 @@ static FloatBar* floatbar_create(wfContext* const wfc)
         floatbar->buttons[1] = NULL;
     }
 
-	floatbar->buttons[2] = floatbar_create_button(floatbar, BUTTON_CLOSE, IDB_CLOSE, IDB_CLOSE_ACT, CLOSE_X, BUTTON_Y, BUTTON_HEIGHT, BUTTON_WIDTH);
+#endif
+    floatbar->buttons[2] = floatbar_create_button(floatbar, BUTTON_CLOSE, IDB_CLOSE, IDB_CLOSE_ACT, CLOSE_X, BUTTON_Y, BUTTON_HEIGHT, BUTTON_WIDTH);
 	floatbar->buttons[3] = floatbar_create_lock_button(floatbar, IDB_UNLOCK, IDB_UNLOCK_ACT, IDB_LOCK, IDB_LOCK_ACT, LOCK_X, BUTTON_Y, BUTTON_HEIGHT, BUTTON_WIDTH);
 
 	return floatbar;

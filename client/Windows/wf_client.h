@@ -23,6 +23,8 @@
 #ifndef __WF_INTERFACE_H
 #define __WF_INTERFACE_H
 
+#define R1_CUSTOMIZATIONS
+
 #include <winpr/windows.h>
 
 #include <winpr/collections.h>
@@ -176,6 +178,11 @@ struct wf_context
     // Not clear what theses are used for, even in the Linux version
     wfWorkArea workArea;
     wfFullscreenMonitors fullscreenMonitors;
+
+#ifdef R1_CUSTOMIZATIONS
+    HANDLE resumeSessionEvent;
+    HANDLE cancelSessionEvent;
+#endif
 };
 
 /**

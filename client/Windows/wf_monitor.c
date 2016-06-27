@@ -31,7 +31,6 @@
 #define TAG CLIENT_TAG("windows")
 
 #include "wf_monitor.h"
-#include "wf_window.h"
 
 /* See MSDN Section on Multiple Display Monitors: http://msdn.microsoft.com/en-us/library/dd145071 */
 
