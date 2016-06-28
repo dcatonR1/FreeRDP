@@ -504,7 +504,11 @@ static CREDUI_INFOA wfUiInfo =
 	sizeof(CREDUI_INFOA),
 	NULL,
 	"Enter your credentials",
+#ifdef R1_CUSTOMIZATIONS
+    "MobiKEY Remote Login",
+#else
 	"Remote Desktop Security",
+#endif
 	NULL
 };
 
