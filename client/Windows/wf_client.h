@@ -182,6 +182,7 @@ struct wf_context
 #ifdef R1_CUSTOMIZATIONS
     HANDLE resumeSessionEvent;
     HANDLE cancelSessionEvent;
+    HANDLE startScanningEvent;
 #endif
 };
 

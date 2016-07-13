@@ -107,6 +107,10 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     if (wfc->cancelSessionEvent == NULL)
         goto out;
 
+    wfc->startScanningEvent = OpenEvent( EVENT_ALL_ACCESS, false, L"MobiStartScan" );
+
+    // Note: do not error out if we cannot open the scanning event.  This is an indication
+    // that scanning is not supported on this particular installation.
 #endif
 
 
@@ -159,6 +163,9 @@ out:
 
     if (wfc->cancelSessionEvent)
         CloseHandle( wfc->cancelSessionEvent );
+
+    if (wfc->startScanningEvent)
+        CloseHandle( wfc->startScanningEvent );
 #endif
 
 	freerdp_client_context_free(context);
