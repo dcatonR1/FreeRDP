@@ -505,6 +505,7 @@ LRESULT CALLBACK floatbar_proc(const HWND hWnd, const UINT Msg, const WPARAM wPa
                     }
                     break;
                 }
+#ifdef R1_CUSTOMIZATIONS
                 case TIMER_RESUME_SESSION:
                 {
                     if (WaitForSingleObject( wfc->resumeSessionEvent, 0 ) == WAIT_OBJECT_0)
@@ -514,6 +515,7 @@ LRESULT CALLBACK floatbar_proc(const HWND hWnd, const UINT Msg, const WPARAM wPa
                         KillTimer( hWnd, wParam );
                     }
                 }
+#endif
                 default:
                     break;
             }
