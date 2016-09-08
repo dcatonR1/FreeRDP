@@ -67,6 +67,9 @@ typedef BOOL (*pPostConnect)(freerdp* instance);
 typedef void (*pPostDisconnect)(freerdp* instance);
 typedef BOOL (*pAuthenticate)(freerdp* instance, char** username,
 			  char** password, char** domain);
+typedef BOOL (*pNLAAuthenticate)(freerdp* instance, char** username, char** password, char** domain,
+	DWORD* keySpec, WCHAR** cardName, WCHAR** readerName, WCHAR** containerName, WCHAR** cspName,
+    WCHAR** userHint, WCHAR** domainHint, WCHAR** pin);
 
 /** @brief Callback used if user interaction is required to accept
  *         an unknown certificate.
@@ -273,7 +276,11 @@ struct rdp_freerdp
 									 Callback for gateway authentication.
 									 It is used to get the username/password when it was not provided at connection time. */
 
-	UINT64 paddingD[64 - 57]; /* 57 */
+	ALIGN64 pNLAAuthenticate NLAAuthenticate; /**< (offset 57)
+											   Callback for NLA authentication.
+											   It is used to get credentials for an NLA connection when it was not provided at connection time. */
+
+	UINT64 paddingD[64 - 58]; /* 58 */
 
 	ALIGN64 pSendChannelData SendChannelData; /* (offset 64)
 										 Callback for sending data to a channel.
