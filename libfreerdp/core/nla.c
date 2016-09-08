@@ -42,7 +42,6 @@
 #include <winpr/dsparse.h>
 #include <winpr/library.h>
 #include <winpr/registry.h>
-
 #include "nla.h"
 
 #define TAG FREERDP_TAG("core.nla")
@@ -50,7 +49,15 @@
 #define SERVER_KEY "Software\\"FREERDP_VENDOR_STRING"\\" \
 			 FREERDP_PRODUCT_STRING"\\Server"
 
-/**
+#ifdef WINVER
+#define SECURE_FREE(ptr,len) if (ptr) free(SecureZeroMemory(ptr,len));
+#define SECURE_WCHAR_FREE(str) if (str) free(SecureZeroMemory(str,_wcslen(str)*sizeof(WCHAR)));
+#else
+#define SECURE_FREE(ptr,len) if (ptr) free(memset(ptr,0,len));
+#define SECURE_WCHAR_FREE(str) if (str) free(memset(str,_wcslen(str)*sizeof(WCHAR)));
+#endif
+
+ /**
  * TSRequest ::= SEQUENCE {
  * 	version    [0] INTEGER,
  * 	negoTokens [1] NegoData OPTIONAL,
@@ -91,6 +98,15 @@
  * 	cspName       [4] OCTET STRING OPTIONAL
  * }
  *
+ * TSRemoteGuardCreds ::= SEQUENCE {
+ *  logonCred         [0] TSRemoteGuardPackageCred,
+ *  supplementalCreds [1] SEQUENCE OF TSRemoteGuardPackageCred OPTIONAL,
+ * }
+ *
+ * TSRemoteGuardPackageCred ::= SEQUENCE {
+ *  packageName [0] OCTET STRING,
+ *  credBuffer  [1] OCTET STRING,
+ * } *
  */
 
 #define NLA_PKG_NAME	NEGOSSP_NAME
@@ -115,24 +131,11 @@ void nla_identity_free(SEC_WINNT_AUTH_IDENTITY* identity)
 {
 	if (identity)
 	{
-		if (identity->User)
-		{
-			memset(identity->User, 0, identity->UserLength * 2);
-			free(identity->User);
-		}
-		if (identity->Password)
-		{
-			memset(identity->Password, 0, identity->PasswordLength * 2);
-			free(identity->Password);
-		}
-		if (identity->Domain)
-		{
-			memset(identity->Domain, 0, identity->DomainLength * 2);
-			free(identity->Domain);
-		}
+		SECURE_FREE(identity->User, identity->UserLength * sizeof(WCHAR));
+		SECURE_FREE(identity->Password, identity->PasswordLength * sizeof(WCHAR));
+		SECURE_FREE(identity->Domain, identity->DomainLength * sizeof(WCHAR));
+		SECURE_FREE(identity, sizeof(SEC_WINNT_AUTH_IDENTITY));
 	}
-	free(identity);
-
 }
 
 /**
@@ -199,8 +202,30 @@ int nla_client_init(rdpNla* nla)
 	{
 		if (instance->Authenticate)
 		{
-			BOOL proceed = instance->Authenticate(instance,
-						&settings->Username, &settings->Password, &settings->Domain);
+			BOOL proceed;
+
+			if (instance->NLAAuthenticate)
+			{
+				proceed = instance->NLAAuthenticate(instance,
+					&settings->Username, &settings->Password, &settings->Domain,
+					&nla->keySpec, &nla->cardName, &nla->readerName, &nla->containerName,
+					&nla->cspName, &nla->userHint, &nla->domainHint, &nla->pin);
+
+				if (nla->cardName)
+					nla->credType = TSSmartCardCreds;
+				else
+					nla->credType = TSPasswordCreds;
+
+				// Note: TSRemoteGuardCreds not supported yet
+
+			}
+			else
+			{
+				proceed = instance->Authenticate(instance,
+					&settings->Username, &settings->Password, &settings->Domain);
+
+				nla->credType = TSPasswordCreds;
+			}
 
 			if (!proceed)
 			{
@@ -378,7 +403,7 @@ int nla_client_begin(rdpNla* nla)
 	nla->negoToken.pvBuffer = nla->outputBuffer.pvBuffer;
 	nla->negoToken.cbBuffer = nla->outputBuffer.cbBuffer;
 
-	WLog_DBG(TAG, "Sending Authentication Token");
+	WLog_DBG(TAG, "Sending Authentication Token (1)");
 	winpr_HexDump(TAG, WLOG_DEBUG, nla->negoToken.pvBuffer, nla->negoToken.cbBuffer);
 
 	if (!nla_send(nla))
@@ -468,7 +493,7 @@ int nla_client_recv(rdpNla* nla)
 		nla->negoToken.pvBuffer = nla->outputBuffer.pvBuffer;
 		nla->negoToken.cbBuffer = nla->outputBuffer.cbBuffer;
 
-		WLog_DBG(TAG, "Sending Authentication Token");
+		WLog_DBG(TAG, "Sending Authentication Token (2)");
 		winpr_HexDump(TAG, WLOG_DEBUG, nla->negoToken.pvBuffer, nla->negoToken.cbBuffer);
 
 		if (!nla_send(nla))
@@ -823,7 +848,7 @@ int nla_server_authenticate(rdpNla* nla)
 
 		/* send authentication token */
 
-		WLog_DBG(TAG, "Sending Authentication Token");
+		WLog_DBG(TAG, "Sending Authentication Token (3)");
 		nla_buffer_print(nla);
 
 		if (!nla_send(nla))
@@ -996,7 +1021,7 @@ SECURITY_STATUS nla_decrypt_public_key_echo(rdpNla* nla)
 	SECURITY_STATUS status;
 
 	signature_length = nla->pubKeyAuth.cbBuffer - nla->PublicKey.cbBuffer;
-	if (signature_length < 0 || signature_length > nla->ContextSizes.cbSecurityTrailer)
+	if (signature_length < 0 || signature_length >(int) nla->ContextSizes.cbSecurityTrailer)
 	{
 		WLog_ERR(TAG, "unexpected pubKeyAuth buffer size: %lu", nla->pubKeyAuth.cbBuffer);
 		return SEC_E_INVALID_TOKEN;
@@ -1061,6 +1086,52 @@ int nla_sizeof_ts_password_creds(rdpNla* nla)
 		length += ber_sizeof_sequence_octet_string(nla->identity->UserLength * 2);
 		length += ber_sizeof_sequence_octet_string(nla->identity->PasswordLength * 2);
 	}
+	return length;
+}
+
+int nla_sizeof_ts_CspDataDetail(rdpNla * nla)
+{
+	int length = 0;
+
+	/* [0] keySpec (INTEGER) */
+	length += ber_sizeof_contextual_tag(ber_sizeof_integer(nla->keySpec));
+	length += ber_sizeof_integer(nla->keySpec);
+
+	/* [1] cardName (OCTET STRING OPTIONAL) */
+	length += ber_sizeof_sequence_octet_string(_wcslen(nla->cardName) * sizeof(WCHAR));
+
+	/* [2] readerName (OCTET STRING OPTIONAL) */
+	length += ber_sizeof_sequence_octet_string(_wcslen(nla->readerName) * sizeof(WCHAR));
+
+	/* [3] containerName (OCTET STRING OPTIONAL) */
+	length += ber_sizeof_sequence_octet_string(_wcslen(nla->containerName) * sizeof(WCHAR));
+
+	/* [4] cspName (OCTET STRING OPTIONAL) */
+	length += ber_sizeof_sequence_octet_string(_wcslen(nla->cspName) * sizeof(WCHAR));
+
+	return length;
+}
+
+int nla_sizeof_ts_smartcard_creds(rdpNla* nla)
+{
+	int length = 0;
+	int ts_capDataDetail_size = nla_sizeof_ts_CspDataDetail(nla);
+
+	/* [0] pin (OCTET STRING) */
+	length += ber_sizeof_sequence_octet_string(_wcslen(nla->pin) * sizeof(WCHAR));
+
+	/* [1] cspData (TSCspDataDetail) */
+	length += ber_sizeof_contextual_tag(ts_capDataDetail_size);
+	length += ber_sizeof_sequence(ts_capDataDetail_size);
+
+	/* [2] userHint (OCTET STRING OPTIONAL) */
+	if (nla->userHint)
+		length += ber_sizeof_sequence_octet_string(_wcslen(nla->userHint) * sizeof(WCHAR));
+
+	/* [3] domainHint (OCTET STRING OPTIONAL) */
+	if (nla->domainHint)
+		length += ber_sizeof_sequence_octet_string(_wcslen(nla->domainHint) * sizeof(WCHAR));
+
 	return length;
 }
 
@@ -1176,12 +1247,91 @@ int nla_write_ts_password_creds(rdpNla* nla, wStream* s)
 	return size;
 }
 
+int nla_write_ts_CspDataDetail(rdpNla * nla, wStream* s)
+{
+	int length = 0;
+	int innerSize = nla_sizeof_ts_CspDataDetail(nla);
+
+	/* TSCspDataDetail (SEQUENCE) */
+	length += ber_write_sequence_tag(s, innerSize);
+
+	/* [0] keySpec (INTEGER) */
+	length += ber_write_contextual_tag(s, 0, ber_sizeof_integer(nla->keySpec), TRUE);
+	length += ber_write_integer(s, nla->keySpec);
+
+	/* [1] cardName (OCTET STRING OPTIONAL) */
+	length += ber_write_sequence_octet_string(s, 1, (BYTE*) nla->cardName, _wcslen(nla->cardName) * sizeof(WCHAR));
+
+	/* [2] readerName (OCTET STRING OPTIONAL) */
+	length += ber_write_sequence_octet_string(s, 2, (BYTE*) nla->readerName, _wcslen(nla->readerName) * sizeof(WCHAR));
+
+	/* [3] containerName (OCTET STRING OPTIONAL) */
+	length += ber_write_sequence_octet_string(s, 3, (BYTE*) nla->containerName, _wcslen(nla->containerName) * sizeof(WCHAR));
+
+	/* [4] cspName (OCTET STRING OPTIONAL) */
+	length += ber_write_sequence_octet_string(s, 4, (BYTE*) nla->cspName, _wcslen(nla->cspName) * sizeof(WCHAR));
+
+	return length;
+}
+
+int nla_write_ts_smartcard_creds(rdpNla* nla, wStream* s)
+{
+	int size = 0;
+	int cspDataDetailSize;
+	int innerSize = nla_sizeof_ts_smartcard_creds(nla);
+
+	/* TSSmartCardCreds (SEQUENCE) */
+	size += ber_write_sequence_tag(s, innerSize);
+
+	/* [0] pin (OCTET STRING) */
+	size += ber_write_sequence_octet_string(s, 0, (BYTE*) nla->pin, _wcslen(nla->pin) * sizeof(WCHAR));
+
+	/* [1] cspData (TSCspDataDetail) */
+	cspDataDetailSize = ber_sizeof_sequence(nla_sizeof_ts_CspDataDetail(nla));
+	size += ber_write_contextual_tag(s, 1, cspDataDetailSize, TRUE);
+	size += nla_write_ts_CspDataDetail(nla, s);
+
+	/* [2] userHint (OCTET STRING OPTIONAL) */
+	if (nla->userHint)
+		size += ber_write_sequence_octet_string(s, 2, (BYTE*) nla->userHint, _wcslen(nla->userHint) * sizeof(WCHAR));
+
+	/* [3] domainHint (OCTET STRING OPTIONAL) */
+	if (nla->domainHint)
+		size += ber_write_sequence_octet_string(s, 3, (BYTE*) nla->domainHint, _wcslen(nla->domainHint) * sizeof(WCHAR));
+
+	return size;
+}
+
 int nla_sizeof_ts_credentials(rdpNla* nla)
 {
 	int size = 0;
-	size += ber_sizeof_integer(1);
-	size += ber_sizeof_contextual_tag(ber_sizeof_integer(1));
-	size += ber_sizeof_sequence_octet_string(ber_sizeof_sequence(nla_sizeof_ts_password_creds(nla)));
+
+	/* [0] credType (INTEGER) */
+	size += ber_sizeof_contextual_tag(ber_sizeof_integer(nla->credType));
+	size += ber_sizeof_integer(nla->credType);
+
+	/* [1] credentials (OCTET STRING) */
+	switch (nla->credType)
+	{
+	    case TSPasswordCreds:
+		    size += ber_sizeof_sequence_octet_string(ber_sizeof_sequence(nla_sizeof_ts_password_creds(nla)));
+		    break;
+
+	    case TSSmartCardCreds:
+		    size += ber_sizeof_sequence_octet_string(ber_sizeof_sequence(nla_sizeof_ts_smartcard_creds(nla)));
+		    break;
+
+	    case TSRemoteGuardCreds:
+		    // Not currently implemented...
+		    //size += ber_sizeof_sequence_octet_string(ber_sizeof_sequence(nla_sizeof_ts_remotguard_creds(nla)));
+		    //break;
+
+	    default:
+		    WLog_ERR(TAG, "unexpected nla->credType: %d", nla->credType);
+	}
+
+	WLog_DBG(TAG, "nla_sizeof_ts_credentials(): %d", size);
+
 	return size;
 }
 
@@ -1218,21 +1368,57 @@ static BOOL nla_read_ts_credentials(rdpNla* nla, PSecBuffer ts_credentials)
 int nla_write_ts_credentials(rdpNla* nla, wStream* s)
 {
 	int size = 0;
-	int passwordSize;
+	int credSize;
 	int innerSize = nla_sizeof_ts_credentials(nla);
 
 	/* TSCredentials (SEQUENCE) */
 	size += ber_write_sequence_tag(s, innerSize);
 
 	/* [0] credType (INTEGER) */
-	size += ber_write_contextual_tag(s, 0, ber_sizeof_integer(1), TRUE);
-	size += ber_write_integer(s, 1);
+	size += ber_write_contextual_tag(s, 0, ber_sizeof_integer(nla->credType), TRUE);
+	size += ber_write_integer(s, nla->credType);
 
 	/* [1] credentials (OCTET STRING) */
-	passwordSize = ber_sizeof_sequence(nla_sizeof_ts_password_creds(nla));
-	size += ber_write_contextual_tag(s, 1, ber_sizeof_octet_string(passwordSize), TRUE);
-	size += ber_write_octet_string_tag(s, passwordSize);
-	size += nla_write_ts_password_creds(nla, s);
+	switch (nla->credType)
+	{
+	    case TSPasswordCreds:
+		    credSize = ber_sizeof_sequence(nla_sizeof_ts_password_creds(nla));
+		    break;
+
+	    case TSSmartCardCreds:
+		    credSize = ber_sizeof_sequence(nla_sizeof_ts_smartcard_creds(nla));
+		    break;
+
+	    case TSRemoteGuardCreds:
+		    // Not currently implemented...
+		    // credSize = ber_sizeof_sequence(nla_sizeof_ts_remoteguard_creds(nla));
+		    //break;
+
+	    default:
+		    WLog_ERR(TAG, "unexpected nla->credType: %d", nla->credType);
+	}
+
+	size += ber_write_contextual_tag(s, 1, ber_sizeof_octet_string(credSize), TRUE);
+	size += ber_write_octet_string_tag(s, credSize);
+
+	switch (nla->credType)
+	{
+	    case TSPasswordCreds:
+		    size += nla_write_ts_password_creds(nla, s);
+		    break;
+
+	    case TSSmartCardCreds:
+		    size += nla_write_ts_smartcard_creds(nla, s);
+		    break;
+
+	    case TSRemoteGuardCreds:
+		    // Not currently implemented...
+		    // size += nla_write_ts_remoteguard_creds(nla, s);
+		    //break;
+
+	    default:
+		    WLog_ERR(TAG, "unexpected nla->credType: %d", nla->credType);
+	}
 
 	return size;
 }
@@ -1246,6 +1432,7 @@ BOOL nla_encode_ts_credentials(rdpNla* nla)
 {
 	wStream* s;
 	int length;
+	int lengthWritten;
 	int DomainLength = 0;
 	int UserLength = 0;
 	int PasswordLength = 0;
@@ -1279,7 +1466,7 @@ BOOL nla_encode_ts_credentials(rdpNla* nla)
 		return FALSE;
 	}
 
-	nla_write_ts_credentials(nla, s);
+	lengthWritten = nla_write_ts_credentials(nla, s);
 
 	if (nla->settings->DisableCredentialsDelegation)
 	{
@@ -1289,6 +1476,13 @@ BOOL nla_encode_ts_credentials(rdpNla* nla)
 	}
 
 	Stream_Free(s, FALSE);
+
+	if (length != lengthWritten)
+	{
+		WLog_ERR(TAG, "Calculated size of credentials: %d != actual data written: %d", length, lengthWritten);
+		return FALSE;
+	}
+
 	return TRUE;
 }
 
@@ -1832,5 +2026,14 @@ void nla_free(rdpNla* nla)
 
 	free(nla->ServicePrincipalName);
 	nla_identity_free(nla->identity);
-	free(nla);
+
+	SECURE_WCHAR_FREE(nla->cardName);
+	SECURE_WCHAR_FREE(nla->readerName);
+	SECURE_WCHAR_FREE(nla->containerName);
+	SECURE_WCHAR_FREE(nla->cspName);
+	SECURE_WCHAR_FREE(nla->userHint);
+	SECURE_WCHAR_FREE(nla->domainHint);
+	SECURE_WCHAR_FREE(nla->pin);
+
+	SECURE_FREE(nla, sizeof(rdpNla));
 }
