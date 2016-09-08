@@ -57,6 +57,35 @@
 
 #include "resource.h"
 
+#if WINVER >= _WIN32_WINNT_VISTA
+#define _NTDEF_   // fixes duplicate #define for UNICODE_STRING, etc.
+#include <Ntsecapi.h>
+#undef _NTDEF_
+#include <objbase.h>
+#include <strsafe.h>
+#pragma comment( lib, "Secur32.lib" )
+
+typedef struct _KERB_SMARTCARD_CSP_INFO
+{
+	// From https://msdn.microsoft.com/en-us/library/windows/desktop/bb545682(v=vs.85).aspx
+
+	DWORD dwCspInfoLen;
+	DWORD MessageType;
+	union
+	{
+		PVOID   ContextInformation;
+		ULONG64 SpaceHolderForWow64;
+	};
+	DWORD flags;
+	DWORD KeySpec;
+	ULONG nCardNameOffset;
+	ULONG nReaderNameOffset;
+	ULONG nContainerNameOffset;
+	ULONG nCSPNameOffset;
+	TCHAR bBuffer;
+} KERB_SMARTCARD_CSP_INFO, *PKERB_SMARTCARD_CSP_INFO;
+#endif
+
 #define TAG CLIENT_TAG("windows")
 
 int wf_create_console(void)
@@ -573,6 +602,183 @@ static BOOL wf_authenticate_raw(freerdp* instance, const char* title,
 	return TRUE;
 }
 
+#if WINVER >= _WIN32_WINNT_VISTA
+static BOOL wf_nla_authenticate(freerdp* instance, char** username, char** password, char** domain, DWORD* keySpec, WCHAR** cardName, WCHAR** readerName, WCHAR** containerName, WCHAR** cspName, WCHAR** userHint, WCHAR** domainHint, WCHAR ** pin)
+{
+	BOOL ret = TRUE;
+
+	WCHAR caption[256];
+	StringCbPrintf(caption, sizeof(caption), L"FreeRDP will use these credentials to connect to %S", instance->settings->ServerHostname);
+
+	CREDUI_INFO wfUiInfo;
+	wfUiInfo.cbSize = sizeof(CREDUI_INFO);
+	wfUiInfo.hwndParent = NULL;
+	wfUiInfo.pszCaptionText = caption;
+	wfUiInfo.pszMessageText = L"Please enter your credentials:";
+	wfUiInfo.hbmBanner = NULL;
+
+	ULONG authenticationPackage = 0;
+	void * pvOutAuthBuffer = NULL;
+	ULONG ulOutAuthBufferSize = 0;
+
+	DWORD status = CredUIPromptForWindowsCredentialsW(&wfUiInfo, 0, &authenticationPackage, NULL, 0, &pvOutAuthBuffer, &ulOutAuthBufferSize, NULL, 0);
+
+	if (status != NO_ERROR)
+	{
+		if (status == ERROR_CANCELLED)
+		{
+			WLog_ERR(TAG, "CredUIPromptForWindowsCredentials() returned ERROR_CANCELLED");
+		}
+		else
+		{
+			WLog_ERR(TAG, "CredUIPromptForWindowsCredentials() unexpected status: 0x%08X", status);
+		}
+		ret = FALSE;
+		goto done;
+	}
+
+	// Note: It is assumed that pvOutAuthBuffer with always be a KERB_* structure, which always has
+	// a KERB_INTERACTIVE_LOGON member named MessageType as the first member.  In testing,
+	// this has always been the case for text as well as smartcard credentials. 
+	// 
+	// However, CredUIPromptForWindowsCredentials() allows credential input for any installed cred
+	// provider (e.g. fingerprint readers, etc.).  Therefore, it is possible that other types of data
+	// could be returned in pvOutAuthBuffer, and that the assumptions made here may not always be correct.
+
+	KERB_LOGON_SUBMIT_TYPE logonType = ((KERB_INTERACTIVE_LOGON *) pvOutAuthBuffer)->MessageType;
+
+	if (logonType == KerbInteractiveLogon)
+	{
+		WCHAR * usernameW = NULL;
+		WCHAR * passwordW = NULL;
+		WCHAR * domainW = NULL;
+		DWORD usernameLen = 0;
+		DWORD passwordLen = 0;
+		DWORD domainLen = 0;
+
+		status = CredUnPackAuthenticationBufferW(CRED_PACK_PROTECTED_CREDENTIALS, pvOutAuthBuffer, ulOutAuthBufferSize, NULL, &usernameLen, NULL, &domainLen, NULL, &passwordLen);
+
+		if ((!status) && GetLastError() == ERROR_INSUFFICIENT_BUFFER)
+		{
+			usernameW = malloc(usernameLen * sizeof(WCHAR));
+			passwordW = malloc(passwordLen * sizeof(WCHAR));
+
+			if (domainLen > 0)
+			{
+				domainW = malloc(domainLen * sizeof(WCHAR));
+			}
+
+			status = CredUnPackAuthenticationBufferW(CRED_PACK_PROTECTED_CREDENTIALS, pvOutAuthBuffer, ulOutAuthBufferSize, usernameW, &usernameLen, domainW, &domainLen, passwordW, &passwordLen);
+		}
+
+		if (!status)
+		{
+			WLog_ERR(TAG, "CredUnPackAuthenticationBuffer() unexpected return: 0x%08X", GetLastError());
+			ret = FALSE;
+		}
+		else if (domainLen == 0)
+		{
+			// For some unknown reason, CredUnPackAuthenticationBuffer() does not unpack the username and domain seperately, so we have to do this.
+			WCHAR * userNameAndDomain = usernameW;
+
+			usernameW = malloc((CREDUI_MAX_USERNAME_LENGTH + 1) * sizeof(WCHAR));
+			domainW = malloc((CREDUI_MAX_DOMAIN_TARGET_LENGTH + 1) * sizeof(WCHAR));
+			status = CredUIParseUserNameW(userNameAndDomain, usernameW, CREDUI_MAX_USERNAME_LENGTH + 1, domainW, CREDUI_MAX_DOMAIN_TARGET_LENGTH + 1);
+
+			free(userNameAndDomain);
+
+			if (status != NO_ERROR)
+			{
+				WLog_ERR(TAG, "CredUIParseUserNameW() unexpected return: 0x%08X", GetLastError());
+				ret = FALSE;
+			}
+		}
+
+		if (ret)
+		{
+
+			int sizeneeded = WideCharToMultiByte(CP_ACP, 0, usernameW, -1, NULL, 0, NULL, NULL);
+			*username = malloc(sizeneeded);
+			WideCharToMultiByte(CP_ACP, 0, usernameW, -1, *username, sizeneeded, NULL, NULL);
+
+			sizeneeded = WideCharToMultiByte(CP_ACP, 0, domainW, -1, NULL, 0, NULL, NULL);
+			*domain = malloc(sizeneeded);
+			WideCharToMultiByte(CP_ACP, 0, domainW, -1, *domain, sizeneeded, NULL, NULL);
+
+			sizeneeded = WideCharToMultiByte(CP_ACP, 0, passwordW, -1, NULL, 0, NULL, NULL);
+			*password = malloc(sizeneeded);
+			WideCharToMultiByte(CP_ACP, 0, passwordW, -1, *password, sizeneeded, NULL, NULL);
+		}
+
+		free(usernameW);
+		free(passwordW);
+		free(domainW);
+	}
+	else if (logonType == KerbCertificateLogon)
+	{
+		KERB_CERTIFICATE_LOGON * certLogon = (KERB_CERTIFICATE_LOGON *) pvOutAuthBuffer;
+
+		// KERB_CERTIFICATE_LOGON string fields are UNICODE_STRING structures.  Despite being typed as a pointer,
+		// UNICODE_STRING.Buffer is NOT a pointer, it is an offset from the beginning of the enclosing structure
+		// (KERB_CERTIFICATE_LOGON in this case).  The string is NOT null terminated so we must use UNICODE_STRING.Length
+		// to extract the string and manually append a null terminator.  Ugh.
+
+		if (certLogon->UserName.Length > 0)
+		{
+			*userHint = calloc(certLogon->UserName.Length + sizeof(WCHAR), 1);
+			memcpy(*userHint, ((char *) certLogon) + (int) certLogon->UserName.Buffer, certLogon->UserName.Length);
+		}
+
+		if (certLogon->DomainName.Length > 0)
+		{
+			*domainHint = calloc(certLogon->DomainName.Length + sizeof(WCHAR), 1);
+			memcpy(*domainHint, ((char *) certLogon) + (int) certLogon->DomainName.Buffer, certLogon->DomainName.Length);
+		}
+
+		if (certLogon->Pin.Length > 0)
+		{
+			WCHAR * encryptedPin = (WCHAR *) (((char *) certLogon) + (int) certLogon->Pin.Buffer);
+			DWORD pinSize = 0;
+			status = CredUnprotectW(TRUE, encryptedPin, certLogon->Pin.Length, NULL, &pinSize);
+
+			if ((!status) && GetLastError() == ERROR_INSUFFICIENT_BUFFER)
+			{
+				*pin = malloc(pinSize * sizeof(WCHAR));
+				status = CredUnprotectW(TRUE, encryptedPin, certLogon->Pin.Length, *pin, &pinSize);
+			}
+
+			if (!status)
+			{
+				WLog_ERR(TAG, "CredUnprotectW() unexpected return: 0x%08X", GetLastError());
+				ret = FALSE;
+			}
+		}
+
+		KERB_SMARTCARD_CSP_INFO * info = (KERB_SMARTCARD_CSP_INFO *) (((char *) certLogon) + (int) certLogon->CspData);
+
+		*keySpec = info->KeySpec;
+		*cardName = _wcsdup((&info->bBuffer) + info->nCardNameOffset);
+		*readerName = _wcsdup((&info->bBuffer) + info->nReaderNameOffset);
+		*containerName = _wcsdup((&info->bBuffer) + info->nContainerNameOffset);
+		*cspName = _wcsdup((&info->bBuffer) + info->nCSPNameOffset);
+	}
+	else
+	{
+		WLog_ERR(TAG, " Unexpected KERB_LOGON_SUBMIT_TYPE: %d", logonType);
+		ret = FALSE;
+	}
+
+done:
+
+	if (pvOutAuthBuffer)
+	{
+		CoTaskMemFree(SecureZeroMemory(pvOutAuthBuffer, ulOutAuthBufferSize));
+	}
+
+	return ret;
+}
+#endif
+
 static BOOL wf_authenticate(freerdp* instance,
 		char** username, char** password, char** domain)
 {
@@ -1086,6 +1292,9 @@ BOOL wfreerdp_client_new(freerdp* instance, rdpContext* context)
 	instance->PreConnect = wf_pre_connect;
 	instance->PostConnect = wf_post_connect;
 	instance->Authenticate = wf_authenticate;
+#if WINVER >= _WIN32_WINNT_VISTA
+	instance->NLAAuthenticate = wf_nla_authenticate;
+#endif
 	instance->GatewayAuthenticate = wf_gw_authenticate;
 	instance->VerifyCertificate = wf_verify_certificate;
 	instance->VerifyChangedCertificate = wf_verify_changed_certificate;

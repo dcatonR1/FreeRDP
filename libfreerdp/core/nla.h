@@ -47,6 +47,15 @@ enum _NLA_STATE
 };
 typedef enum _NLA_STATE NLA_STATE;
 
+enum _NLA_CREDTYPE
+{
+	// From MS-CSSP 2.2.1.2
+	TSPasswordCreds    = 1,
+	TSSmartCardCreds   = 2,
+	TSRemoteGuardCreds = 6
+};
+typedef enum _NLA_CREDTYPE NLA_CREDTYPE;
+
 struct rdp_nla
 {
 	BOOL server;
@@ -85,6 +94,15 @@ struct rdp_nla
 	SEC_WINNT_AUTH_IDENTITY* identity;
 	PSecurityFunctionTable table;
 	SecPkgContext_Sizes ContextSizes;
+	NLA_CREDTYPE credType;
+	DWORD keySpec;
+	WCHAR * cardName;
+	WCHAR * readerName;
+	WCHAR * containerName;
+	WCHAR * cspName;
+	WCHAR * userHint;
+	WCHAR * domainHint;
+    WCHAR * pin;
 };
 
 int nla_authenticate(rdpNla* nla);
