@@ -14,6 +14,8 @@
 # EXTERNAL cache entries
 ########################
 
+BUILD_SHARED_LIBS:BOOL=OFF
+
 //Build unit tests
 BUILD_TESTING:BOOL=OFF
 
@@ -58,6 +60,12 @@ CHANNEL_ECHO_SERVER:BOOL=OFF
 
 //Build encomsp static channel
 CHANNEL_ENCOMSP:BOOL=OFF
+
+//Build mobikey dynamic channel
+CHANNEL_MOBIKEY:BOOL=ON
+
+//Build mobikey dynamic channel client
+CHANNEL_MOBIKEY_CLIENT:BOOL=ON
 
 //Build parallel device channel
 CHANNEL_PARALLEL:BOOL=OFF
@@ -591,7 +599,7 @@ encomsp-client_LIB_DEPENDS:STATIC=
 freerdp-cache_LIB_DEPENDS:STATIC=general;freerdp-core;general;freerdp-utils;
 
 //Dependencies for the target
-freerdp-client_LIB_DEPENDS:STATIC=general;audin-client;general;echo-client;general;rdpei-client;general;rdpgfx-client;general;drdynvc-client;general;rdpdr-client;general;rdpsnd-client;general;printer-client;general;smartcard-client;general;audin-client-winmm;general;rdpsnd-client-winmm;general;freerdp;general;winpr;general;winpr;
+freerdp-client_LIB_DEPENDS:STATIC=general;audin-client;general;echo-client;general;mobikey-client;general;rdpei-client;general;rdpgfx-client;general;drdynvc-client;general;rdpdr-client;general;rdpsnd-client;general;printer-client;general;smartcard-client;general;audin-client-winmm;general;rdpsnd-client-winmm;general;freerdp;general;winpr;general;winpr;
 
 //Dependencies for the target
 freerdp-codec_LIB_DEPENDS:STATIC=general;freerdp-primitives;general;freerdp-utils;general;winpr-crt;general;winpr-pool;general;winpr-registry;general;winpr-sysinfo;general;winpr-utils;
@@ -622,6 +630,9 @@ freerdp-utils_LIB_DEPENDS:STATIC=general;ws2_32;general;winpr-crt;general;winpr-
 
 //Dependencies for the target
 freerdp_LIB_DEPENDS:STATIC=general;ws2_32;general;C:/OpenSSL-Win32/lib/VC/ssleay32MD.lib;general;C:/OpenSSL-Win32/lib/VC/libeay32MD.lib;general;winpr;
+
+//Dependencies for the target
+mobikey-client_LIB_DEPENDS:STATIC=general;winpr;
 
 //Dependencies for the target
 printer-client_LIB_DEPENDS:STATIC=general;winpr;general;freerdp;
@@ -915,7 +926,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO
 CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=86
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=88
 //ADVANCED property for variable: CMAKE_RC_COMPILER
 CMAKE_RC_COMPILER-ADVANCED:INTERNAL=1
 CMAKE_RC_COMPILER_WORKS:INTERNAL=1
