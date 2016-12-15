@@ -5,6 +5,7 @@
  * Copyright 2013 Marc-Andre Moreau <marcandre.moreau@gmail.com>
  * Copyright 2015 Thincast Technologies GmbH
  * Copyright 2015 DI (FH) Martin Haimberger <martin.haimberger@thincast.com>
+ * Copyright 2016 David PHAM-VAN <d.phamvan@inuvika.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -180,7 +181,7 @@ UINT disp_recv_display_control_caps_pdu(DISP_CHANNEL_CALLBACK* callback, wStream
 
 	if (Stream_GetRemainingLength(s) < 12)
 	{
-		WLog_ERR(TAG, "not enought remaining data");
+		WLog_ERR(TAG, "not enough remaining data");
 		return ERROR_INVALID_DATA;
 	}
 
@@ -205,7 +206,7 @@ UINT disp_recv_pdu(DISP_CHANNEL_CALLBACK* callback, wStream* s)
 
 	if (Stream_GetRemainingLength(s) < 8)
 	{
-		WLog_ERR(TAG, "not enought remaining data");
+		WLog_ERR(TAG, "not enough remaining data");
 		return ERROR_INVALID_DATA;
 	}
 
@@ -317,6 +318,9 @@ static UINT disp_plugin_initialize(IWTSPlugin* pPlugin, IWTSVirtualChannelManage
  */
 static UINT disp_plugin_terminated(IWTSPlugin* pPlugin)
 {
+	DISP_PLUGIN* disp = (DISP_PLUGIN*) pPlugin;
+	free(disp->listener_callback);
+	free(disp->iface.pInterface);
 	free(pPlugin);
 	return CHANNEL_RC_OK;
 }

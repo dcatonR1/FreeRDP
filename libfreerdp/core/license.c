@@ -243,7 +243,7 @@ int license_recv(rdpLicense* license, wStream* s)
 	UINT16 wMsgSize;
 	UINT16 length;
 	UINT16 channelId;
-	UINT16 securityFlags;
+	UINT16 securityFlags = 0;
 
 	if (!rdp_read_header(license->rdp, s, &length, &channelId))
 	{
@@ -385,17 +385,12 @@ BOOL license_generate_keys(rdpLicense* license)
 
 BOOL license_generate_hwid(rdpLicense* license)
 {
-	WINPR_MD5_CTX md5;
 	BYTE macAddress[6];
 
 	ZeroMemory(macAddress, sizeof(macAddress));
 	ZeroMemory(license->HardwareId, HWID_LENGTH);
 
-	if (!winpr_MD5_Init(&md5))
-		return FALSE;
-	if (!winpr_MD5_Update(&md5, macAddress, sizeof(macAddress)))
-		return FALSE;
-	if (!winpr_MD5_Final(&md5, &license->HardwareId[HWID_PLATFORM_ID_LENGTH], WINPR_MD5_DIGEST_LENGTH))
+	if (!winpr_Digest(WINPR_MD_MD5, macAddress, sizeof(macAddress), &license->HardwareId[HWID_PLATFORM_ID_LENGTH], WINPR_MD5_DIGEST_LENGTH))
 		return FALSE;
 
 	return TRUE;

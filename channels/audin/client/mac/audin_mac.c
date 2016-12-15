@@ -174,7 +174,7 @@ static void mac_audio_queue_input_cb(void *aqData,
 {
     AudinMacDevice* mac = (AudinMacDevice*)aqData;
     UINT error;
-    int encoded_size;
+    int encoded_size = 0;
     const BYTE *encoded_data;
     BYTE *buffer = inBuffer->mAudioData;
     int buffer_size = inBuffer->mAudioDataByteSize;
@@ -215,7 +215,7 @@ static void mac_audio_queue_input_cb(void *aqData,
 
     if ((error = mac->receive(encoded_data, encoded_size, mac->user_data)))
     {
-        WLog_ERR(TAG, "mac->receive failed with error %lu", error);
+        WLog_ERR(TAG, "mac->receive failed with error %u", error);
         SetLastError(ERROR_INTERNAL_ERROR);
         return;
     }
@@ -438,7 +438,7 @@ UINT freerdp_audin_client_subsystem_entry(PFREERDP_AUDIN_DEVICE_ENTRY_POINTS pEn
 
     if ((error = audin_mac_parse_addin_args(mac, args)))
     {
-        WLog_ERR(TAG, "audin_mac_parse_addin_args failed with %lu!", error);
+        WLog_ERR(TAG, "audin_mac_parse_addin_args failed with %u!", error);
         goto error_out;
     }
 
@@ -452,7 +452,7 @@ UINT freerdp_audin_client_subsystem_entry(PFREERDP_AUDIN_DEVICE_ENTRY_POINTS pEn
 
     if ((error = pEntryPoints->pRegisterAudinDevice(pEntryPoints->plugin, (IAudinDevice*) mac)))
     {
-        WLog_ERR(TAG, "RegisterAudinDevice failed with error %lu!", error);
+        WLog_ERR(TAG, "RegisterAudinDevice failed with error %u!", error);
         goto error_out;
     }
 

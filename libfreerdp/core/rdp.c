@@ -791,7 +791,7 @@ int rdp_recv_data_pdu(rdpRdp* rdp, wStream* s)
 		{
 			if (!(cs = StreamPool_Take(rdp->transport->ReceivePool, DstSize)))
 			{
-				WLog_ERR(TAG, "Coudn't take stream from pool");
+				WLog_ERR(TAG, "Couldn't take stream from pool");
 				return -1;
 			}
 
@@ -1110,7 +1110,7 @@ static int rdp_recv_tpkt_pdu(rdpRdp* rdp, wStream* s)
 	UINT16 pduLength;
 	UINT16 pduSource;
 	UINT16 channelId = 0;
-	UINT16 securityFlags;
+	UINT16 securityFlags = 0;
 	int nextPosition;
 
 	if (!rdp_read_header(rdp, s, &length, &channelId))
@@ -1646,12 +1646,6 @@ void rdp_reset(rdpRdp* rdp)
 		rdp->fips_decrypt = NULL;
 	}
 
-	if (rdp->fips_hmac)
-	{
-		free(rdp->fips_hmac);
-		rdp->fips_hmac = NULL;
-	}
-
 	if (settings->ServerRandom)
 	{
 		free(settings->ServerRandom);
@@ -1699,7 +1693,6 @@ void rdp_free(rdpRdp* rdp)
 		winpr_RC4_Free(rdp->rc4_encrypt_key);
 		winpr_Cipher_Free(rdp->fips_encrypt);
 		winpr_Cipher_Free(rdp->fips_decrypt);
-		free(rdp->fips_hmac);
 		freerdp_settings_free(rdp->settings);
 		freerdp_settings_free(rdp->settingsCopy);
 		transport_free(rdp->transport);

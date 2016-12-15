@@ -26,46 +26,110 @@
 #endif
 
 #include <freerdp/primitives.h>
-
+#include <freerdp/api.h>
 
 /* Use lddqu for unaligned; load for 16-byte aligned. */
 #define LOAD_SI128(_ptr_) \
 	(((ULONG_PTR) (_ptr_) & 0x0f) \
-		? _mm_lddqu_si128((__m128i *) (_ptr_)) \
-		: _mm_load_si128((__m128i *) (_ptr_)))
+	 ? _mm_lddqu_si128((__m128i *) (_ptr_)) \
+	 : _mm_load_si128((__m128i *) (_ptr_)))
+
+static INLINE BYTE* writePixelBGRX(BYTE* dst, DWORD formatSize, UINT32 format,
+                                   BYTE R, BYTE G, BYTE B, BYTE A)
+{
+	*dst++ = B;
+	*dst++ = G;
+	*dst++ = R;
+	*dst++ = A;
+	return dst;
+}
+
+static INLINE BYTE* writePixelRGBX(BYTE* dst, DWORD formatSize, UINT32 format,
+                                   BYTE R, BYTE G, BYTE B, BYTE A)
+{
+	*dst++ = R;
+	*dst++ = G;
+	*dst++ = B;
+	*dst++ = A;
+	return dst;
+}
+
+static INLINE BYTE* writePixelXBGR(BYTE* dst, DWORD formatSize, UINT32 format,
+                                   BYTE R, BYTE G, BYTE B, BYTE A)
+{
+	*dst++ = A;
+	*dst++ = B;
+	*dst++ = G;
+	*dst++ = R;
+	return dst;
+}
+
+static INLINE BYTE* writePixelXRGB(BYTE* dst, DWORD formatSize, UINT32 format,
+                                   BYTE R, BYTE G, BYTE B, BYTE A)
+{
+	*dst++ = A;
+	*dst++ = R;
+	*dst++ = G;
+	*dst++ = B;
+	return dst;
+}
+
+static INLINE BYTE* writePixelGeneric(BYTE* dst, DWORD formatSize, UINT32 format,
+                                      BYTE R, BYTE G, BYTE B, BYTE A)
+{
+	UINT32 color = GetColor(format, R, G, B, A);
+	WriteColor(dst, format, color);
+	return dst + formatSize;
+}
+
+typedef BYTE* (*fkt_writePixel)(BYTE*, DWORD, UINT32, BYTE, BYTE, BYTE, BYTE);
+
+static INLINE fkt_writePixel getPixelWriteFunction(DWORD format)
+{
+	switch (format)
+	{
+	    case PIXEL_FORMAT_ARGB32:
+	    case PIXEL_FORMAT_XRGB32:
+		    return writePixelXRGB;
+
+	    case PIXEL_FORMAT_ABGR32:
+	    case PIXEL_FORMAT_XBGR32:
+		    return writePixelXBGR;
+
+	    case PIXEL_FORMAT_RGBA32:
+	    case PIXEL_FORMAT_RGBX32:
+		    return writePixelRGBX;
+
+	    case PIXEL_FORMAT_BGRA32:
+	    case PIXEL_FORMAT_BGRX32:
+		    return writePixelBGRX;
+
+	    default:
+		    return writePixelGeneric;
+	}
+}
 
 /* Function prototypes for all the init/deinit routines. */
-extern void primitives_init_copy(primitives_t *prims);
-extern void primitives_deinit_copy(primitives_t *prims);
+FREERDP_LOCAL void primitives_init_copy(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_set(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_add(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_andor(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_shift(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_sign(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_alphaComp(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_colors(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_YCoCg(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_YUV(primitives_t* prims);
 
-extern void primitives_init_set(primitives_t *prims);
-extern void primitives_deinit_set(primitives_t *prims);
-
-extern void primitives_init_add(primitives_t *prims);
-extern void primitives_deinit_add(primitives_t *prims);
-
-extern void primitives_init_andor(primitives_t *prims);
-extern void primitives_deinit_andor(primitives_t *prims);
-
-extern void primitives_init_shift(primitives_t *prims);
-extern void primitives_deinit_shift(primitives_t *prims);
-
-extern void primitives_init_sign(primitives_t *prims);
-extern void primitives_deinit_sign(primitives_t *prims);
-
-extern void primitives_init_alphaComp(primitives_t *prims);
-extern void primitives_deinit_alphaComp(primitives_t *prims);
-
-extern void primitives_init_colors(primitives_t *prims);
-extern void primitives_deinit_colors(primitives_t *prims);
-
-extern void primitives_init_YCoCg(primitives_t *prims);
-extern void primitives_deinit_YCoCg(primitives_t *prims);
-
-extern void primitives_init_YUV(primitives_t *prims);
-extern void primitives_deinit_YUV(primitives_t *prims);
-
-extern void primitives_init_16to32bpp(primitives_t *prims);
-extern void primitives_deinit_16to32bpp(primitives_t *prims);
+FREERDP_LOCAL void primitives_init_copy_opt(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_set_opt(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_add_opt(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_andor_opt(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_shift_opt(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_sign_opt(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_alphaComp_opt(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_colors_opt(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_YCoCg_opt(primitives_t* prims);
+FREERDP_LOCAL void primitives_init_YUV_opt(primitives_t* prims);
 
 #endif /* !__PRIM_INTERNAL_H_INCLUDED__ */
